@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .DS_Store
 pipeline/snapshots/
+web/node_modules/
+web/dist/

@@ -1,6 +1,6 @@
 # Data pipeline
 
-`build_dataset.py` produces `../data/wifi_churn.json`, the only Wi‑Fi data the website loads.
+`build_dataset.py` produces `../web/public/data/wifi_churn.json`, the only Wi‑Fi data the website loads.
 
 ## Simulated demo (default)
 

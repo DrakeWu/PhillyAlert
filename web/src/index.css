@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Paper and ink. One signal color (red) for loss, one (blue) for gain; status amber/green only with a label. */
+@layer base {
+  :root {
+    --paper: 42 31% 94%;
+    --paper-2: 42 30% 89%;
+    --paper-3: 42 25% 82%;
+    --ink: 51 19% 7%;
+    --ink-2: 44 8% 27%;
+    --rule: 42 23% 78%;
+    --signal: 6 64% 47%;
+    --signal-2: 8 62% 68%;
+    --signal-3: 10 63% 83%;
+    --gain: 217 61% 43%;
+    --gain-2: 218 59% 76%;
+    --amber: 36 90% 42%;
+    --good: 120 60% 30%;
+
+    --background: var(--paper);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --popover: 42 50% 97%;
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--paper);
+    --secondary: var(--paper-2);
+    --secondary-foreground: var(--ink);
+    --muted: var(--paper-2);
+    --muted-foreground: 43 8% 40%;
+    --accent: var(--paper-3);
+    --accent-foreground: var(--ink);
+    --destructive: var(--signal);
+    --destructive-foreground: 0 0% 100%;
+    --border: var(--rule);
+    --input: var(--rule);
+    --ring: var(--signal);
+    --radius: 2px;
+  }
+
+  .dark {
+    --paper: 60 5% 7%;
+    --paper-2: 45 7% 11%;
+    --paper-3: 40 7% 16%;
+    --ink: 43 30% 91%;
+    --ink-2: 43 13% 73%;
+    --rule: 40 9% 21%;
+    --signal: 6 74% 60%;
+    --signal-2: 6 47% 44%;
+    --signal-3: 7 41% 25%;
+    --gain: 217 71% 66%;
+    --gain-2: 217 42% 35%;
+    --amber: 40 90% 55%;
+    --good: 120 55% 50%;
+    --popover: 45 7% 12%;
+    --muted-foreground: 42 7% 58%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { scroll-behavior: smooth; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 16px;
+  }
+  code { @apply font-mono text-[0.88em] bg-paper-2 px-1; }
+  :focus-visible { outline: 2px solid hsl(var(--signal)); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .animate-blink { animation: none; }
+  }
+}
+
+@layer components {
+  .kicker { @apply font-mono text-[12.5px] uppercase tracking-[0.08em] text-signal; }
+  .btn-ink {
+    @apply inline-flex items-center gap-2 rounded-sm bg-ink px-4 py-2 text-[15px] font-semibold text-paper no-underline transition-colors hover:bg-signal hover:text-white;
+  }
+  .hair { @apply border-rule; }
+}
+
+/* Incident markers on the map */
+.pp-marker {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 6px; cursor: pointer;
+  background: hsl(var(--paper)); color: hsl(var(--ink)); border: 1px solid hsl(var(--ink)); border-radius: 1px;
+  font: 600 12px/1.2 'Public Sans', system-ui, sans-serif; white-space: nowrap;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
+}
+.pp-marker.is-open { box-shadow: 0 0 0 2px var(--sev); }
+.pp-marker-sq { width: 8px; height: 8px; background: var(--sev); }
+
+/* MapLibre popups and controls, restyled to match */
+.maplibregl-popup-content {
+  background: hsl(var(--popover)) !important;
+  color: hsl(var(--ink)) !important;
+  border: 1px solid hsl(var(--rule));
+  border-radius: 2px !important;
+  padding: 8px 10px !important;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  font-size: 12.5px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.14) !important;
+}
+.maplibregl-popup-tip { display: none; }
+.maplibregl-ctrl-attrib { font-size: 10px; background: hsl(var(--paper) / 0.85) !important; }
+.maplibregl-ctrl-attrib a { color: hsl(var(--ink-2)) !important; }
+.maplibregl-ctrl-group { border-radius: 2px !important; box-shadow: none !important; border: 1px solid hsl(var(--rule)); background: hsl(var(--paper)) !important; }
+.maplibregl-ctrl-group button + button { border-top-color: hsl(var(--rule)) !important; }
+.dark .maplibregl-ctrl-icon { filter: invert(1); }

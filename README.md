@@ -1,35 +1,49 @@
-# PhillyPulse
+# PhillyAlert
 
-PhillyPulse shows neighborhood disruption signals for Philadelphia, detected from aggregate Wi‑Fi access-point churn and cross-referenced with live Philly311 reports.
+PhillyAlert shows neighborhood disruption signals for Philadelphia, detected from aggregate Wi‑Fi access-point churn and cross-referenced with live Philly311 reports.
 
-The core observation comes from *Surveilling the Masses with Wi‑Fi‑Based Positioning Systems* (Rye & Levin, 2024). When a Wi‑Fi access point (AP) loses power or is destroyed, it drops out of Wi‑Fi positioning databases about a week later. After the Maui fire, the APs that vanished from Apple's WPS lined up with the burn map. In Gaza, the share of still-visible APs fell far below a Tel Aviv control group. PhillyPulse turns that idea around for civic use: it watches Philadelphia at the neighborhood level for outages, floods, fires and sudden influxes. It never tracks individual devices.
+The core observation comes from *Surveilling the Masses with Wi‑Fi‑Based Positioning Systems* (Rye & Levin, 2024). When a Wi‑Fi access point (AP) loses power or is destroyed, it drops out of Wi‑Fi positioning databases about a week later. After the Maui fire, the APs that vanished from Apple's WPS lined up with the burn map. In Gaza, the share of still-visible APs fell far below a Tel Aviv control group. PhillyAlert turns that idea around for civic use: it watches Philadelphia at the neighborhood level for outages, floods, fires and sudden influxes. It never tracks individual devices.
 
 ## Run it
 
-You only need Python 3. There is no Node or build step.
+You need Node 20+ with pnpm, and Python 3 for the data pipeline.
+
+```bash
+cd web
+```
+
+```bash
+pnpm install
+```
+
+```bash
+pnpm dev
+```
+
+Then open http://localhost:5173. `pnpm build` writes a static site to `web/dist/`; every asset path is relative, so it works from any folder. Pushing to `main` deploys it to GitHub Pages through `.github/workflows/pages.yml`. Enable it once under the repo's Settings → Pages → Source: GitHub Actions.
+
+To regenerate the demo data (a simulated 60 days ending today):
 
 ```bash
 python pipeline/build_dataset.py
 ```
 
-```bash
-python -m http.server 8321
-```
-
-Then open http://localhost:8321.
-
-`build_dataset.py` writes `data/wifi_churn.json` (a simulated demo ending today) plus the city and neighborhood boundaries. Re-run it any day to slide the window forward.
+It writes `web/public/data/wifi_churn.json` plus the city and neighborhood boundaries.
 
 ## What you're looking at
 
+**Landing page (`#/`).** The main graphic is the real hex grid on the latest day, with newspaper-style callouts. Below it: three charts of the kinds of signal (an outage and its recovery, a one-block fire, move-in week), the method, and the privacy commitments.
+
+**Map (`#/map`).**
+
 | Piece | What it does |
 | --- | --- |
-| **Map** | About 1,700 hexagons (roughly 450 m across) clipped to the city limits. They're colored by how each cell's share of *baseline* APs still visible compares with the city median. Red means more loss than the city; blue means more gain. |
-| **Alert (top right)** | The most severe active incident, with suggested actions: zoom, show nearby 311 reports, PECO outage map, copy a text brief. |
-| **Incident insights (bottom right)** | Every detected incident. Each has an area-vs-control chart (the same comparison as the paper's Figure 12), the signal onset, a likely event date after subtracting the lag, the number of APs dark, and live 311 reports in those cells. Click any hexagon to inspect it. |
-| **Timeline** | Scrub or play through the 60-day window. Charts never show data after the selected day. |
-| **Detection sliders** | Minimum drop vs. city, z-score threshold, and minimum APs per cell. Lower them to see the noise floor. |
-| **311 layer** | Real, live infrastructure requests from `phl.carto.com`: street and alley light outages, traffic signal emergencies, dangerous buildings, fire safety, inlets, hydrants and manholes. |
+| **Map** | About 1,700 hexagons (roughly 450 m across) clipped to the city limits. They're colored by how each cell's share of *baseline* routers still visible compares with the city median: red means more loss than the city, blue means more gain. The CARTO basemap is re-inked to match the site's palette. |
+| **Alert strip** | The most severe active incident you aren't already looking at, with links to zoom in or open PECO's outage map. |
+| **Sidebar: timeline** | Scrub or play through the 60-day window. Charts never show data after the selected day. |
+| **Sidebar: Incidents** | A feed of active incidents plus the ones that ended earlier in the window. Opening one shows an area-vs-control chart (the paper's Figure 12 comparison), when it was first flagged, the likely start date after the ~7-day lag, routers dark, live 311 reports in those hexagons, and a copyable text brief. Clicking any hexagon shows the same view for that cell. |
+| **Sidebar: Map layers** | What colors the map (loss, new routers, density), which layers show, including live 311 infrastructure reports, and a jump-to-neighborhood box. |
+| **Sidebar: Detection** | Minimum gap from the city, z-score threshold, and smallest hexagon counted. Loosen them to see the noise floor. |
 
 ### The simulated scenarios
 
@@ -55,7 +69,7 @@ Every scenario includes the ~7-day positioning-database lag the paper measured (
 6. **Incidents.** Adjacent flagged cells are grouped, linked day to day, and kept once they persist for 3 days (or are happening on the latest day).
 7. **Classification.** Four or more cells is a *widespread outage*; fewer is a *localized loss* (fire, collapse or demolition). An incident is *Restored* once its cells rejoin the control. Severity comes from the number of APs dark and the share of the area lost.
 
-The detection runs in the browser (`js/detect.js`), so the sliders re-run it live.
+The detection runs in the browser (`web/src/lib/detect.ts`), so the sliders re-run it live.
 
 ## Privacy and ethics
 
@@ -69,16 +83,18 @@ The paper is primarily a warning. The same data that shows Lahaina burning also 
 ## Layout
 
 ```
-index.html            page shell: map + three floating cards (mirrors the sample repo's UI)
-css/styles.css        shadcn-style tokens, light + dark
-js/app.js             map layers, timeline, alert, insights, 311 overlay
-js/detect.js          control series, cell tests, incident tracking
-js/chart.js           SVG area-vs-control chart with hover + table view
-js/phl311.js          live Philly311 query (OpenDataPhilly Carto API)
-js/icons.js           inline Lucide icons
+web/                        React 19 + TypeScript + Vite + Tailwind + shadcn/ui
+  src/pages/Landing.tsx     landing page
+  src/pages/MapPage.tsx     map desk: sidebar feed, detail views, alert strip, legend
+  src/components/map/MapView.tsx   MapLibre wrapper: hex layers, markers, hover, basemap re-inking
+  src/components/HexMap.tsx        static SVG city grid for the landing page
+  src/components/LineChart.tsx     area-vs-control chart with hover and table view
+  src/lib/detect.ts         control series, cell tests, incident tracking
+  src/lib/phl311.ts         live Philly311 query (OpenDataPhilly Carto API)
+  src/lib/data.ts           dataset + 311 loading, shared between pages
+  public/data/              generated dataset + simplified boundaries
 pipeline/build_dataset.py   hex grid, simulator, and real-snapshot ingestion
-pipeline/raw/         city limits + neighborhood boundaries (OpenDataPhilly)
-data/                 generated dataset + simplified boundaries
+pipeline/raw/               city limits + neighborhood boundaries (OpenDataPhilly)
 ```
 
 ## Credits
@@ -86,4 +102,5 @@ data/                 generated dataset + simplified boundaries
 - Rye, E. & Levin, D. *Surveilling the Masses with Wi‑Fi‑Based Positioning Systems.* IEEE S&P 2024 (arXiv:2405.14975).
 - Boundaries and 311 data: City of Philadelphia / OpenDataPhilly.
 - Basemap: © CARTO, © OpenStreetMap contributors. Map rendering: MapLibre GL JS.
-- UI structure adapted from [alangrewco/treehacks](https://github.com/alangrewco/treehacks).
+- Type: Newsreader, Public Sans and IBM Plex Mono (Google Fonts). Components: shadcn/ui.
+- Early UI structure adapted from [alangrewco/treehacks](https://github.com/alangrewco/treehacks).

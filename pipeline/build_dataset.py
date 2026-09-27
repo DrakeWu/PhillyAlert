@@ -1,4 +1,4 @@
-"""Build the aggregated Wi-Fi churn dataset that powers the PhillyPulse map.
+"""Build the aggregated Wi-Fi churn dataset that powers the PhillyAlert map.
 
 The idea comes from "Surveilling the Masses with Wi-Fi-Based Positioning Systems"
 (Rye & Levin, 2024): when a Wi-Fi access point loses power or is destroyed, it
@@ -45,7 +45,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 RAW = HERE / "raw"
-OUT_DIR = HERE.parent / "data"
+OUT_DIR = HERE.parent / "web" / "public" / "data"
 
 HEX_SIZE_M = 260.0  # hex circumradius -> ~450 m across flats, ~0.18 km^2
 K_MIN = 25          # suppress cells with fewer baseline APs than this
