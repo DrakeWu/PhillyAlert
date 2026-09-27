@@ -10,6 +10,16 @@ python build_dataset.py --seed 215
 
 This generates about 190k synthetic APs, with density shaped like Philadelphia (dense rowhouse neighborhoods, sparse parks, rail yards and airport). It adds natural churn of about 8% per month (the paper's Fig. 5) and the five scenario events listed in `EVENTS`. Edit `EVENTS` to stage your own: `start` and `restore` are day offsets into the 60-day window, and `offline` is the share of baseline APs affected. Use `--end YYYY-MM-DD` to pin the window's last day.
 
+## Ida 2021 replay
+
+```bash
+python build_dataset.py --scenario ida-2021
+```
+
+This writes `../web/public/data/ida_2021.json` for Aug 9 – Oct 7, 2021. `ida_2021.py` gathers the real inputs (USGS river gauge and Ida high-water marks, NWS flood stages, USGS 3DEP elevation, OpenStreetMap water, City building footprints). It estimates the flooded ground from them and turns routers off only in flooded buildings. The docstring at the top of `ida_2021.py` lists every modeling assumption.
+
+Processed inputs are cached in `raw/ida_2021/` (`gauge.json`, `hwms.json`, `footprint.json`), so the build runs offline. `samples.json`, the raw 30 m elevation lattice, is kept locally but not committed. Pass `--refresh` to download everything again (a few minutes; about 20 elevation requests plus one building query per riverside hexagon).
+
 ## Real observations
 
 ```bash

@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 .DS_Store
 pipeline/snapshots/
+pipeline/raw/ida_2021/samples.json
 web/node_modules/
 web/dist/

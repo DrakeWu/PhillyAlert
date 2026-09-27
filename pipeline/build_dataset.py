@@ -18,7 +18,8 @@ This script only ever emits AGGREGATES:
 
 Modes
 -----
-  python build_dataset.py --simulate            # synthetic demo (default)
+  python build_dataset.py                       # synthetic demo (default)
+  python build_dataset.py --scenario ida-2021   # Ida flood replay (see ida_2021.py)
   python build_dataset.py --snapshots DIR       # real, authorized observations
 
 Snapshot CSVs (one file per day, named YYYY-MM-DD.csv) need the columns
@@ -300,14 +301,23 @@ def main() -> None:
     ap.add_argument("--baseline-days", type=int, default=7)
     ap.add_argument("--seed", type=int, default=215)
     ap.add_argument("--end", type=dt.date.fromisoformat, default=dt.date.today(), help="last day (simulate mode)")
+    ap.add_argument("--scenario", choices=["demo", "ida-2021"], default="demo",
+                    help="ida-2021: replay the Sept 2021 Schuylkill flood (writes ida_2021.json)")
+    ap.add_argument("--refresh", action="store_true", help="re-download the Ida inputs cached in raw/ida_2021/")
     args = ap.parse_args()
 
     city, hoods = load_boundaries()
     cells = build_grid(city, hoods)
+    scenario = None
+    out_name = "wifi_churn.json"
 
     if args.snapshots:
         start, days = ingest(cells, args.snapshots, args.baseline_days)
         simulated = False
+    elif args.scenario == "ida-2021":
+        import ida_2021
+        start, scenario = ida_2021.build(cells, city, DAYS, args.seed, args.refresh)
+        days, simulated, out_name = DAYS, True, "ida_2021.json"
     else:
         simulate(cells, np.random.default_rng(args.seed))
         start, days, simulated = args.end - dt.timedelta(days=DAYS - 1), DAYS, True
@@ -325,6 +335,7 @@ def main() -> None:
             "suppressedCells": len(cells) - len(kept),
             "wpsLagDays": 7,
             "generated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            **({"scenario": scenario} if scenario else {}),
         },
         "cells": [
             {
@@ -342,7 +353,7 @@ def main() -> None:
         ],
     }
     OUT_DIR.mkdir(exist_ok=True)
-    (OUT_DIR / "wifi_churn.json").write_text(json.dumps(out, separators=(",", ":")))
+    (OUT_DIR / out_name).write_text(json.dumps(out, separators=(",", ":")))
 
     # Lightweight copies of the boundaries for the map (5-decimal precision).
     def rounded(o):

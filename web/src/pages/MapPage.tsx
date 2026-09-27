@@ -10,8 +10,8 @@ import { LineChart } from '@/components/LineChart';
 import { Wordmark } from '@/components/Wordmark';
 import { MapView } from '@/components/map/MapView';
 import { PALETTE, R311_WINDOW, type Layers, type MapHandle, type Metric } from '@/components/map/palette';
-import { cellDay, detect, incidentsAt, type Cell, type Incident, type Params } from '@/lib/detect';
-import { reportsIn, use311, useCityData, type CityData } from '@/lib/data';
+import { cellDay, detect, incidentsAt, type Cell, type Incident, type Model, type Params, type Scenario } from '@/lib/detect';
+import { DATASETS, isDatasetId, reportsIn, use311, useCityData, type CityData, type DatasetId } from '@/lib/data';
 import { GROUP_LABEL, type Report } from '@/lib/phl311';
 import { fmtDate, num, pct, place, pts, SEV_COLOR, SEV_LABEL, SEV_SWATCH, TYPE_LABEL } from '@/lib/format';
 import { useDark } from '@/hooks/use-dark';
@@ -30,9 +30,29 @@ function useIsWide() {
   return wide;
 }
 
+/** The dataset lives in the URL (#/map?data=ida-2021) so a replay can be linked to directly. */
+function useDatasetParam(): [DatasetId, (id: DatasetId) => void] {
+  const read = (): DatasetId => {
+    const v = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('data');
+    return isDatasetId(v) ? v : 'demo';
+  };
+  const [id, setId] = useState(read);
+  useEffect(() => {
+    const on = () => setId(read());
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  const set = (next: DatasetId) => {
+    setId(next);
+    history.replaceState(null, '', next === 'demo' ? '#/map' : `#/map?data=${next}`);
+  };
+  return [id, set];
+}
+
 export function MapPage() {
-  const { data, error } = useCityData();
-  if (error) {
+  const [dataset, setDataset] = useDatasetParam();
+  const { data, error, loading } = useCityData(dataset);
+  if (error && !data) {
     return (
       <div className="mx-auto max-w-lg p-8">
         <Wordmark />
@@ -42,18 +62,43 @@ export function MapPage() {
     );
   }
   if (!data) return <div className="grid h-dvh place-items-center font-mono text-sm text-muted-foreground">Loading the city grid…</div>;
-  return <Desk data={data} />;
+  // Keyed by dataset: switching rebuilds the desk (timeline, selection, map) for the new window.
+  return <Desk key={data.id} data={data} switcher={<DatasetSwitch value={dataset} loading={loading} error={error} onChange={setDataset} />} />;
+}
+
+function DatasetSwitch({ value, loading, error, onChange }: { value: DatasetId; loading: boolean; error?: string; onChange: (id: DatasetId) => void }) {
+  const ids = Object.keys(DATASETS) as DatasetId[];
+  return (
+    <div className="border-b border-rule px-5 py-3">
+      <div role="radiogroup" aria-label="Dataset" className="grid grid-cols-2 border border-ink">
+        {ids.map((id, i) => {
+          const on = id === value;
+          return (
+            <button key={id} type="button" role="radio" aria-checked={on} onClick={() => onChange(id)}
+              className={cn('px-3 py-2 text-left transition-colors', i && 'border-l border-ink', on ? 'bg-ink text-paper' : 'hover:bg-paper-2')}>
+              <span className="block text-[13.5px] font-medium leading-tight">{DATASETS[id].label}</span>
+              <span className={cn('block text-[11.5px] leading-snug', on ? 'text-paper/75' : 'text-muted-foreground')}>
+                {on && loading ? 'Loading…' : DATASETS[id].hint}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {error && <p className="mt-2 text-xs text-signal">Couldn&rsquo;t load that dataset: {error}</p>}
+    </div>
+  );
 }
 
 type Selection = { kind: 'incident'; id: number } | { kind: 'cell'; id: number } | null;
 
-function Desk({ data }: { data: CityData }) {
+function Desk({ data, switcher }: { data: CityData; switcher: ReactNode }) {
   const { model } = data;
+  const scenario = model.meta.scenario;
   const last = model.meta.days - 1;
-  const [day, setDay] = useState(last);
+  const [day, setDay] = useState(scenario ? Math.min(scenario.focusDay, last) : last);
   const [playing, setPlaying] = useState(false);
   const [metric, setMetric] = useState<Metric>('excess');
-  const [layers, setLayers] = useState<Layers>({ cells: true, flags: true, markers: true, r311: false, hoods: false });
+  const [layers, setLayers] = useState<Layers>({ cells: true, flags: true, markers: true, r311: false, hoods: false, flood: !!scenario, hwm: !!scenario });
   const [params, setParams] = useState<Params>({ minDrop: 0.08, zThr: 4, kMin: 25 });
   const [debounced, setDebounced] = useState(params);
   const [selection, setSelection] = useState<Selection>(null);
@@ -111,9 +156,10 @@ function Desk({ data }: { data: CityData }) {
         </header>
         <p className="border-b border-rule px-5 py-2 font-mono text-[11.5px] text-ink-2">
           {num(model.cells.length)} hexagons · {num(det.city.baseline)} routers ·{' '}
-          {reports ? `${num(reports.length)} live 311 reports` : reportsError ? '311 unavailable' : 'loading 311…'}
-          {model.meta.simulated && <span className="text-signal"> · Wi‑Fi simulated</span>}
+          {reports ? `${num(reports.length)} ${scenario ? '' : 'live '}311 reports` : reportsError ? '311 unavailable' : 'loading 311…'}
+          {model.meta.simulated && <span className="text-signal"> · Wi‑Fi {scenario ? 'reconstructed' : 'simulated'}</span>}
         </p>
+        {switcher}
 
         <Timeline day={day} last={last} dates={model.dates} playing={playing}
           onDay={(d) => { setPlaying(false); setDay(d); }} onPlay={() => { if (day >= last) setDay(0); setPlaying((p) => !p); }} />
@@ -136,7 +182,10 @@ function Desk({ data }: { data: CityData }) {
             ) : selectedCell ? (
               <CellDetail cell={selectedCell} data={data} det={det} day={day} reports={reports} onBack={() => setSelection(null)} />
             ) : (
-              <IncidentFeed incidents={incidents} data={data} det={det} day={day} onOpen={(id) => focusIncident(id)} />
+              <>
+                {scenario && <ScenarioPanel scenario={scenario} model={model} day={day} />}
+                <IncidentFeed incidents={incidents} data={data} det={det} day={day} onOpen={(id) => focusIncident(id)} />
+              </>
             )}
           </TabsContent>
 
@@ -159,7 +208,7 @@ function Desk({ data }: { data: CityData }) {
           onSelectCell={selectCell} onSelectIncident={(id) => focusIncident(id)} />
         {alert && <AlertStrip inc={alert} data={data} det={det} day={day}
           onOpen={() => focusIncident(alert.id)} onDismiss={() => setDismissed((s) => new Set(s).add(alert.id))} />}
-        <Legend metric={metric} r311={layers.r311} />
+        <Legend metric={metric} r311={layers.r311} flood={!!scenario && layers.flood} hwm={!!scenario && layers.hwm} />
       </section>
     </div>
   );
@@ -191,6 +240,58 @@ function Timeline({ day, last, dates, playing, onDay, onPlay }:
   );
 }
 
+// ---------------------------------------------------------------- replay context
+
+function ScenarioPanel({ scenario, model, day }: { scenario: Scenario; model: Model; day: number }) {
+  const g = scenario.gauge;
+  // Fill any missing gauge days with the previous reading so the line stays continuous.
+  const stage = useMemo(() => {
+    const out: number[] = [];
+    for (const v of g.stageFt) out.push(v ?? out[out.length - 1] ?? g.stageFt.find((x) => x != null) ?? 0);
+    return out;
+  }, [g]);
+  const crest = new Date(g.crest.time);
+  const ft = (v: number) => `${Math.round(v * 10) / 10} ft`;
+  return (
+    <section className="space-y-3 border-b border-rule px-5 py-4">
+      <div>
+        <h2 className="font-serif text-[21px] leading-tight">Ida&rsquo;s remnants flood the Schuylkill</h2>
+        <p className="mt-1.5 text-[13.5px] leading-snug text-ink-2">
+          The river crested at {g.crest.stageFt} ft at Fairmount Dam
+          at {crest.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} on {fmtDate(crest, { month: 'long', day: 'numeric' })}, 2021,
+          its highest since {g.record.year}. The teal on the map is ground that sat below the high-water line USGS surveyed afterward
+          (about {scenario.flood.km2} km²).
+        </p>
+      </div>
+      <LineChart dates={model.dates} upTo={day} height={104} format={ft} caption="Schuylkill River stage at Fairmount Dam, daily peak"
+        yScale={{ lo: 4, hi: 20, step: 4 }} band={[scenario.eventDay, scenario.eventDay]} bandColor="hsl(var(--flood))"
+        refs={[{ value: g.floodFt.minor, label: `flood stage ${g.floodFt.minor} ft` }]}
+        series={[{ name: 'River stage, daily peak', color: 'hsl(var(--flood))', values: stage }]} />
+      <details className="text-[13px] leading-snug">
+        <summary className="cursor-pointer font-medium">What&rsquo;s real and what&rsquo;s reconstructed</summary>
+        <div className="mt-2 space-y-2 text-ink-2">
+          <p>
+            <b className="font-medium text-ink">Real:</b> the river gauge, {scenario.hwms.length} high-water marks, the flood extent estimated
+            from those marks and 1&#8209;meter elevation data, City building outlines, and the 311 reports filed at the time.
+          </p>
+          <p>
+            <b className="font-medium text-ink">Reconstructed:</b> the routers. No public Wi&#8209;Fi data from 2021 exists, so routers here
+            go dark only inside flooded buildings: some for a few days, some for weeks, some replaced. A router that&rsquo;s back within
+            about five days never drops out of the database, which is why the storm&rsquo;s brief power outages elsewhere don&rsquo;t show.
+          </p>
+          <p className="flex flex-wrap gap-x-3 gap-y-1">
+            {scenario.sources.map((s) => (
+              <a key={s.url} href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline decoration-rule underline-offset-4 hover:decoration-ink">
+                {s.label} <ExternalLink className="h-3 w-3" />
+              </a>
+            ))}
+          </p>
+        </div>
+      </details>
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------- incident feed
 
 function SevTag({ inc, children }: { inc: Incident; children?: ReactNode }) {
@@ -210,7 +311,7 @@ function headline(inc: Incident) {
 function summary(inc: Incident, data: CityData, day: number, city: number) {
   const since = fmtDate(data.model.dates[inc.onset]);
   if (inc.type === 'influx') return `Newly seen routers are ${pts(inc.now).replace('+', '')} above the city rate since ${since}, consistent with move-in week or new housing.`;
-  if (inc.type === 'localized') return `${num(inc.apsNow)} routers in a small cluster vanished around ${since} and haven’t come back, consistent with a fire, collapse or demolition.`;
+  if (inc.type === 'localized') return `${num(inc.apsNow)} routers in a small cluster vanished around ${since} and haven’t come back, consistent with a fire, flood, collapse or demolition.`;
   if (!inc.active) return `${num(inc.apsPeak)} routers went dark at the peak. They’ve since come back, and the area is in line with the rest of the city.`;
   return `${pct(1 - inc.surv[day])} of the routers in ${inc.cellIds.length} hexagons are dark. The median Philadelphia hexagon still shows ${pct(city)}.`;
 }
@@ -329,9 +430,11 @@ function brief(inc: Incident, data: CityData, det: ReturnType<typeof detect>, da
     `${SEV_LABEL[inc.severity]}, ${inc.status.toLowerCase()} as of ${fmtDate(model.dates[day], { month: 'long', day: 'numeric', year: 'numeric' })}.`,
     summary(inc, data, day, det.city.surv[day]),
     `Wi-Fi signal first flagged ${fmtDate(model.dates[inc.onset])}; the event itself likely began around ${fmtDate(model.dates[lagStart])}.`,
-    `Area: ${inc.hoods.slice(0, 4).join(', ')} (${inc.cellIds.length} hexagons, ${num(inc.baseline)} routers).`,
+    `Area: ${inc.hoods.slice(0, 4).join(', ')} (${inc.cellIds.length} ${inc.cellIds.length === 1 ? 'hexagon' : 'hexagons'}, ${num(inc.baseline)} routers).`,
     near ? `311 infrastructure reports in these hexagons since then: ${near.length}.` : '311 reports: unavailable.',
-    model.meta.simulated ? 'Note: Wi-Fi counts are simulated demo data; 311 reports are real.' : '',
+    model.meta.scenario
+      ? 'Note: river levels, high-water marks, the flood extent and 311 reports are real; Wi-Fi counts are a reconstruction.'
+      : model.meta.simulated ? 'Note: Wi-Fi counts are simulated demo data; 311 reports are real.' : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -355,13 +458,13 @@ function IncidentDetail({ inc, data, det, day, reports, reportsError, onBack, on
         ['New routers', `${pct(inc.fresh[day], 1)} of baseline`],
         ['City median', pct(det.city.fresh[day], 1)],
         ['First flagged', fmtDate(model.dates[inc.onset])],
-        ['Area', `${inc.cellIds.length} hexagons · ${num(inc.baseline)} routers`],
+        ['Area', `${inc.cellIds.length} ${inc.cellIds.length === 1 ? 'hexagon' : 'hexagons'} · ${num(inc.baseline)} routers`],
       ]
     : [
         ['Still visible', pct(inc.surv[day], 1)],
         ['City median', pct(det.city.surv[day], 1)],
         ['Routers dark (now / peak)', `${num(inc.apsNow)} / ${num(inc.apsPeak)}`],
-        ['Area', `${inc.cellIds.length} hexagons · ${num(inc.baseline)} routers`],
+        ['Area', `${inc.cellIds.length} ${inc.cellIds.length === 1 ? 'hexagon' : 'hexagons'} · ${num(inc.baseline)} routers`],
         ['First flagged', fmtDate(model.dates[inc.onset])],
         ['Likely began', `≈ ${fmtDate(model.dates[lagStart])}`],
       ];
@@ -385,12 +488,12 @@ function IncidentDetail({ inc, data, det, day, reports, reportsError, onBack, on
       />
       <Facts items={facts} />
       <Reports311 reports={reportsIn(reports, inc.cellIds, lagStart, day)} error={reportsError} from={lagStart} to={day} data={data}
-        title="Live 311 reports in these hexagons" />
+        title={`${model.meta.scenario ? '' : 'Live '}311 reports in these hexagons`} />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={onZoom}><LocateFixed /> Zoom to area</Button>
         <Button size="sm" variant="outline" onClick={onShow311}>Show 311 on map</Button>
         <Button size="sm" variant="outline" onClick={copy}>{copied ? <Check /> : <Copy />} Copy brief</Button>
-        {!influx && (
+        {!influx && !model.meta.scenario && (
           <Button size="sm" variant="link" asChild className="px-1 text-ink-2">
             <a href={PECO_OUTAGE_MAP} target="_blank" rel="noreferrer">PECO outage map <ExternalLink /></a>
           </Button>
@@ -428,7 +531,8 @@ function CellDetail({ cell, data, det, day, reports, onBack }:
         ['Density', `${num(Math.round(cell.baseline / area))} routers/km²`],
         ['Status', det.flags[day][cell.id] < 0 ? 'Flagged: loss' : det.flags[day][cell.id] > 0 ? 'Flagged: influx' : 'Not flagged'],
       ]} />
-      <Reports311 reports={reportsIn(reports, [cell.id], from, day)} from={from} to={day} data={data} title="Live 311 reports, last 14 days" />
+      <Reports311 reports={reportsIn(reports, [cell.id], from, day)} from={from} to={day} data={data}
+        title={`${model.meta.scenario ? '' : 'Live '}311 reports, last ${R311_WINDOW} days`} />
     </article>
   );
 }
@@ -448,7 +552,7 @@ function AlertStrip({ inc, data, det, day, onOpen, onDismiss }:
         <p className="mt-1 text-[13.5px] text-ink-2 max-sm:hidden">{summary(inc, data, day, det.city.surv[day])}</p>
         <div className="mt-2 flex gap-4 text-[13.5px] font-medium">
           <button type="button" className="underline decoration-rule underline-offset-4 hover:decoration-ink" onClick={onOpen}>Details and zoom</button>
-          {inc.kind < 0 && <a href={PECO_OUTAGE_MAP} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline decoration-rule underline-offset-4 hover:decoration-ink">PECO outage map <ExternalLink className="h-3.5 w-3.5" /></a>}
+          {inc.kind < 0 && !data.model.meta.scenario && <a href={PECO_OUTAGE_MAP} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline decoration-rule underline-offset-4 hover:decoration-ink">PECO outage map <ExternalLink className="h-3.5 w-3.5" /></a>}
         </div>
       </div>
       <button type="button" onClick={onDismiss} aria-label="Dismiss alert" className="-mr-1 -mt-1 h-7 w-7 shrink-0 text-muted-foreground hover:text-ink">
@@ -458,7 +562,7 @@ function AlertStrip({ inc, data, det, day, onOpen, onDismiss }:
   );
 }
 
-function Legend({ metric, r311 }: { metric: Metric; r311: boolean }) {
+function Legend({ metric, r311, flood, hwm }: { metric: Metric; r311: boolean; flood: boolean; hwm: boolean }) {
   const dark = useDark();
   const p = dark ? PALETTE.dark : PALETTE.light;
   const diverging = [...p.red, p.mid, ...p.blue];
@@ -475,6 +579,16 @@ function Legend({ metric, r311 }: { metric: Metric; r311: boolean }) {
       {r311 && (
         <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-2">
           <span className="inline-block h-2 w-2 rounded-full bg-ink ring-2 ring-paper" /> 311 report, last {R311_WINDOW} days
+        </p>
+      )}
+      {flood && (
+        <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink-2">
+          <span className="inline-block h-2.5 w-3.5 bg-flood/50" /> Flooded ground, Sep 2, 2021 (est.)
+        </p>
+      )}
+      {hwm && (
+        <p className="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-ink-2">
+          <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-flood bg-paper" /> USGS high-water mark
         </p>
       )}
     </div>
@@ -503,6 +617,7 @@ function LayersPanel({ data, metric, setMetric, layers, setLayer, onJump, onRese
   const toggles: [keyof Layers, string][] = [
     ['cells', 'Hexagons'], ['flags', 'Outline flagged hexagons'], ['markers', 'Incident labels'],
     ['r311', `311 infrastructure reports (last ${R311_WINDOW} days)`], ['hoods', 'Neighborhood boundaries'],
+    ...(data.model.meta.scenario ? [['flood', 'Flood extent (estimated)'], ['hwm', 'USGS high-water marks']] as [keyof Layers, string][] : []),
   ];
   return (
     <div className="space-y-6">

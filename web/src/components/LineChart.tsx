@@ -13,10 +13,14 @@ type Props = {
   band?: [number, number];
   bandColor?: string;
   height?: number;
+  /** Fixed y axis instead of the automatic 0-100% one (e.g. river stage in feet). */
+  yScale?: { lo: number; hi: number; step: number };
+  /** Labeled horizontal reference lines, such as flood stage. */
+  refs?: { value: number; label: string }[];
 };
 
 /** An area vs. the city median, in the style of the paper's Gaza / Tel Aviv comparison (Fig. 12). */
-export function LineChart({ dates, upTo, series, format, caption, band, bandColor = 'hsl(var(--signal))', height = 132 }: Props) {
+export function LineChart({ dates, upTo, series, format, caption, band, bandColor = 'hsl(var(--signal))', height = 132, yScale, refs = [] }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
   const [hover, setHover] = useState<number | null>(null);
@@ -35,6 +39,7 @@ export function LineChart({ dates, upTo, series, format, caption, band, bandColo
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
 
   const { lo, hi, step } = useMemo(() => {
+    if (yScale) return yScale;
     let lo = Infinity, hi = -Infinity;
     for (const s of series) for (let i = 0; i <= upTo; i++) { lo = Math.min(lo, s.values[i]); hi = Math.max(hi, s.values[i]); }
     const step = hi - lo > 0.3 ? 0.1 : 0.05;
@@ -44,7 +49,7 @@ export function LineChart({ dates, upTo, series, format, caption, band, bandColo
     if (capAtOne) hi = Math.min(hi, 1);
     if (hi - lo < step * 2) lo = Math.max(0, hi - step * 2);
     return { lo, hi, step };
-  }, [series, upTo]);
+  }, [series, upTo, yScale]);
 
   const x = (i: number) => m.l + (i / (n - 1)) * iw;
   const y = (v: number) => m.t + (1 - (v - lo) / (hi - lo)) * ih;
@@ -89,6 +94,12 @@ export function LineChart({ dates, upTo, series, format, caption, band, bandColo
           <text key={i} x={x(i)} y={H - 3} textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'} className="fill-muted-foreground font-mono text-[10.5px]">
             {fmtDate(dates[i])}
           </text>
+        ))}
+        {refs.map((r) => (
+          <g key={r.label}>
+            <line x1={m.l} x2={m.l + iw} y1={y(r.value)} y2={y(r.value)} style={{ stroke: 'hsl(var(--signal))' }} strokeWidth={1} strokeDasharray="3 3" />
+            <text x={m.l + 4} y={y(r.value) - 3} className="fill-signal font-mono text-[10px]">{r.label}</text>
+          </g>
         ))}
         {band && band[0] <= upTo && (
           <rect x={x(band[0])} y={m.t} width={Math.max(x(Math.min(band[1], upTo)) - x(band[0]), 2)} height={ih} style={{ fill: bandColor }} opacity={0.12} />

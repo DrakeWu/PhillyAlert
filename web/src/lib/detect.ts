@@ -31,6 +31,29 @@ export type Meta = {
   suppressedCells: number;
   wpsLagDays: number;
   generated: string;
+  /** Present for historical replays (e.g. Ida 2021): real event layers that ship with the dataset. */
+  scenario?: Scenario;
+};
+
+export type HighWaterMark = { label: string; lon: number; lat: number; depthFt: number | null; note: string };
+
+export type Scenario = {
+  id: string;
+  title: string;
+  eventDay: number;
+  focusDay: number;
+  gauge: {
+    site: string;
+    name: string;
+    stageFt: (number | null)[];
+    crest: { time: string; stageFt: number; flowCfs: number | null };
+    floodFt: { action: number; minor: number; moderate: number; major: number };
+    record: { stageFt: number; year: number };
+  };
+  hwms: HighWaterMark[];
+  /** Estimated flooded ground: [lon, lat, depth m] on a sampleM lattice. */
+  flood: { sampleM: number; points: [number, number, number][]; km2: number };
+  sources: { label: string; url: string }[];
 };
 
 export type Dataset = { meta: Meta; cells: Omit<Cell, 'neighbors'>[] };

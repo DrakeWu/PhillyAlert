@@ -17,6 +17,7 @@ export default {
         gain: { DEFAULT: token("gain"), 2: token("gain-2") },
         amber: token("amber"),
         good: token("good"),
+        flood: token("flood"),
         // shadcn roles, mapped onto the palette in index.css
         border: token("border"),
         input: token("input"),

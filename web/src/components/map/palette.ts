@@ -1,7 +1,7 @@
 // Map constants, kept out of MapView.tsx so that file only exports a component (fast refresh).
 
 export type Metric = 'excess' | 'gain' | 'density';
-export type Layers = { cells: boolean; flags: boolean; markers: boolean; r311: boolean; hoods: boolean };
+export type Layers = { cells: boolean; flags: boolean; markers: boolean; r311: boolean; hoods: boolean; flood: boolean; hwm: boolean };
 export type MapHandle = { fitBounds: (b: [[number, number], [number, number]], maxZoom?: number) => void; fitCity: () => void };
 
 export const R311_WINDOW = 14;
@@ -18,6 +18,7 @@ export const PALETTE = {
     paper: '#f4f1ea',
     loss: '#c63a2b',
     gain: '#2a5db0',
+    flood: '#1d7c78', // replay layers only: estimated flood extent, high-water marks
     base: { bg: '#f4f1ea', water: '#d5dcdb', park: '#e6e5d3', building: '#e4ddcd', landuse: '#efebe1' },
   },
   dark: {
@@ -29,6 +30,7 @@ export const PALETTE = {
     paper: '#141412',
     loss: '#e45b4c',
     gain: '#6b9be6',
+    flood: '#46b3ac',
     base: { bg: '#141412', water: '#1a2124', park: '#181a15', building: '#1f1e1b', landuse: '#171715' },
   },
 };

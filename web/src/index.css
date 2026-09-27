@@ -18,6 +18,7 @@
     --gain-2: 218 59% 76%;
     --amber: 36 90% 42%;
     --good: 120 60% 30%;
+    --flood: 177 62% 30%;
 
     --background: var(--paper);
     --foreground: var(--ink);
@@ -55,6 +56,7 @@
     --gain-2: 217 42% 35%;
     --amber: 40 90% 55%;
     --good: 120 55% 50%;
+    --flood: 176 44% 49%;
     --popover: 45 7% 12%;
     --muted-foreground: 42 7% 58%;
   }

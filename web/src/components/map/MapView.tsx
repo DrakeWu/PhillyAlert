@@ -150,9 +150,26 @@ export function MapView(props: Props) {
     map.addSource('hoods', { type: 'geojson', data: data.hoods });
     map.addSource('city', { type: 'geojson', data: data.city });
     map.addSource('r311', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    const sc = data.model.meta.scenario;
+    map.addSource('flood', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: (sc?.flood.points ?? []).map(([lon, lat]) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lon, lat] } })) },
+    });
+    map.addSource('hwm', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: (sc?.hwms ?? []).map((h, i) => ({ type: 'Feature', properties: { i }, geometry: { type: 'Point', coordinates: [h.lon, h.lat] } })) },
+    });
     const hidden: ExpressionSpecification = ['boolean', ['feature-state', 'hidden'], false];
     const flag: ExpressionSpecification = ['coalesce', ['feature-state', 'flag'], 0];
     map.addLayer({ id: 'cells-fill', type: 'fill', source: 'cells', paint: { 'fill-color': p.mid, 'fill-opacity': 0 } }, before);
+    // Flooded ground is sampled every ~30 m; at street zoom the dots grow into a continuous sheet.
+    map.addLayer({
+      id: 'flood-pts', type: 'circle', source: 'flood',
+      paint: {
+        'circle-radius': ['interpolate', ['exponential', 2], ['zoom'], 10, 1, 13, 1.6, 15, 4.8, 17, 19],
+        'circle-color': p.flood, 'circle-opacity': 0.5, 'circle-blur': 0.4,
+      },
+    }, before);
     map.addLayer({ id: 'cells-edge', type: 'line', source: 'cells', paint: { 'line-color': p.paper, 'line-width': 0.5, 'line-opacity': ['case', hidden, 0, 0.55] } }, before);
     map.addLayer({ id: 'hoods-line', type: 'line', source: 'hoods', paint: { 'line-color': p.ink, 'line-width': 0.8, 'line-opacity': 0.4 } }, before);
     map.addLayer({ id: 'city-line', type: 'line', source: 'city', paint: { 'line-color': p.ink, 'line-width': 1.4, 'line-opacity': 0.7 } }, before);
@@ -173,6 +190,15 @@ export function MapView(props: Props) {
         'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 10, 0.8, 13, 1.5],
       },
     });
+    map.addLayer({
+      id: 'hwm-pts', type: 'circle', source: 'hwm',
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 2.6, 13, 4, 16, 6],
+        'circle-color': p.paper,
+        'circle-stroke-color': p.flood,
+        'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 10, 1.6, 13, 2.4],
+      },
+    });
   }
 
   function wireInteraction(map: maplibregl.Map) {
@@ -181,6 +207,16 @@ export function MapView(props: Props) {
     const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
     map.on('mousemove', (e) => {
       const s = latest.current;
+      const hwm = s.layers.hwm ? map.queryRenderedFeatures(e.point, { layers: ['hwm-pts'] })[0] : undefined;
+      const mark = hwm ? s.data.model.meta.scenario?.hwms[hwm.properties.i as number] : undefined;
+      if (mark) {
+        popup.setLngLat(e.lngLat).setHTML(
+          `<div style="font-weight:600;margin-bottom:3px">USGS high-water mark${mark.label ? ` · ${esc(mark.label)}` : ''}</div>` +
+          row('Water above ground', mark.depthFt != null ? `${mark.depthFt} ft` : 'not measured') +
+          (mark.note ? `<div style="color:hsl(var(--ink-2));margin-top:2px">${esc(mark.note)}</div>` : '')).addTo(map);
+        map.getCanvas().style.cursor = 'default';
+        return;
+      }
       const f311 = s.layers.r311 && s.reports ? map.queryRenderedFeatures(e.point, { layers: ['r311-pts'] })[0] : undefined;
       if (f311 && s.reports) {
         const r = s.reports[f311.properties.i as number];
@@ -257,6 +293,8 @@ export function MapView(props: Props) {
     map.setLayoutProperty('cells-flag', 'visibility', vis(layers.flags));
     map.setLayoutProperty('hoods-line', 'visibility', vis(layers.hoods));
     map.setLayoutProperty('r311-pts', 'visibility', vis(layers.r311));
+    map.setLayoutProperty('flood-pts', 'visibility', vis(layers.flood));
+    map.setLayoutProperty('hwm-pts', 'visibility', vis(layers.hwm));
   }, [layers, styleVersion]);
 
   // ---- 311 points
